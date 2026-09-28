@@ -1,0 +1,6 @@
+uploads/*.pdf
+__pycache__/
+extractor/__pycache__/
+.git/
+.venv/
+venv/
