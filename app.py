@@ -1,6 +1,7 @@
 import os
 import uuid
 import json
+import tempfile
 import fitz  # PyMuPDF
 from flask import Flask, render_template, request, jsonify, send_file, Response
 from werkzeug.utils import secure_filename
@@ -11,10 +12,12 @@ from extractor.confidence import ConfidenceCalculator
 from extractor.rag_engine import RAGEngine
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024  # 64 MB
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Use system temp directory (/tmp on Linux/Vercel) to avoid read-only filesystem errors on serverless
+UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'syllabus_uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024  # 64 MB
 
 # In-memory document storage session store
 DOCUMENTS = {}
