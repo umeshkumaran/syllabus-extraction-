@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Uploads directory contents (except .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
+# Environment & IDE
+.env
+.venv
+venv/
+.vscode/
+.idea/
+*.log

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Syllabus PDF Chatbot - Page-Aware Syllabus Intelligence</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="logo-container">
+            <div class="logo-icon">🎓</div>
+            <div class="logo-text">AI SYLLABUS PDF CHATBOT</div>
+        </div>
+        <div class="header-badges">
+            <div class="badge badge-cyan">⚡ Grounded PDF Intelligence</div>
+            <div class="badge badge-emerald">📄 Page-Aware Citations</div>
+        </div>
+    </header>
+
+    <div class="app-body">
+
+        <!-- SCREEN 1: UPLOAD SCREEN -->
+        <section id="uploadScreen" class="upload-screen">
+            <h1 class="hero-title">Chat with ANY Syllabus PDF</h1>
+            <p class="hero-subtitle">
+                Upload any college or university syllabus PDF. We automatically extract courses, units, topics, subtopics, outcomes, and books with exact PDF page citations.
+            </p>
+
+            <div class="drop-zone-card" id="dropZone">
+                <div class="drop-icon">📁</div>
+                <div class="drop-text">Drag & Drop Syllabus PDF Here</div>
+                <div class="drop-hint">Only .PDF files accepted</div>
+                <label for="fileInput" class="btn-primary">
+                    <span>Browse PDF</span>
+                    <input type="file" id="fileInput" accept="application/pdf" style="display:none;">
+                </label>
+            </div>
+
+            <!-- Selected File Indicator -->
+            <div id="selectedFileBox" class="selected-file-box" style="display:none;">
+                <div class="file-info">
+                    <span class="file-icon">📄</span>
+                    <div>
+                        <div id="selectedFileName" style="font-weight:600;">syllabus.pdf</div>
+                        <div id="selectedFileSize" style="font-size:0.8rem; color:var(--text-muted);">2.4 MB</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-secondary" onclick="removeSelectedFile()">Remove</button>
+                    <button class="btn-primary" onclick="processSyllabus()">Process Syllabus</button>
+                </div>
+            </div>
+
+            <!-- Processing Pipeline Card -->
+            <div id="processingCard" class="processing-card">
+                <div class="progress-header">
+                    <span>Processing Syllabus PDF...</span>
+                    <span id="progressPercentText" style="color:var(--accent-cyan)">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div id="progressBarFill" class="progress-bar-fill"></div>
+                </div>
+                <div id="pipelineStepsContainer" class="pipeline-steps">
+                    <!-- Dynamic pipeline step indicators rendered here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 2: WORKSPACE SCREEN -->
+        <section id="workspaceScreen" class="workspace-screen" style="display:none;">
+            
+            <!-- Syllabus Loaded Bar -->
+            <div class="syllabus-loaded-card">
+                <div class="meta-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">File</span>
+                        <span id="statFilename" class="stat-value">doc.pdf</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Pages</span>
+                        <span id="statPages" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Courses Detected</span>
+                        <span id="statCourses" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Estimated Confidence</span>
+                        <span id="statConfidence" class="stat-value" style="color:var(--accent-cyan);">0%</span>
+                    </div>
+                </div>
+
+                <div class="action-bar">
+                    <button class="btn-secondary" onclick="downloadJSON()">📥 Download JSON</button>
+                    <button class="btn-secondary" onclick="downloadReport()">📄 Download Report</button>
+                    <button class="btn-primary" onclick="resetUpload()">📤 Upload New PDF</button>
+                </div>
+            </div>
+
+            <!-- Dual Pane Workspace -->
+            <div class="dual-pane">
+                
+                <!-- LEFT PANE: PDF VIEWER -->
+                <div class="pdf-pane">
+                    <div class="pane-header">
+                        <div class="pane-title">📄 PDF Source Viewer</div>
+                        <div class="pdf-controls">
+                            <button class="btn-icon" onclick="prevPage()" title="Previous Page">◄</button>
+                            <input type="number" id="pageInput" class="page-input" value="1" min="1" onchange="jumpToPage(this.value)">
+                            <span style="font-size:0.85rem; color:var(--text-muted);">/ <span id="pageTotalDisplay">1</span></span>
+                            <button class="btn-icon" onclick="nextPage()" title="Next Page">►</button>
+                        </div>
+                    </div>
+                    <div class="pdf-viewer-container" id="pdfViewerContainer">
+                        <img id="pdfPageImage" class="pdf-page-image" src="" alt="PDF Page Preview">
+                    </div>
+                </div>
+
+                <!-- RIGHT PANE: CHATBOT & TABS -->
+                <div class="right-pane">
+                    <div class="tab-nav">
+                        <button class="tab-btn active" data-tab="tabChat">💬 Chatbot</button>
+                        <button class="tab-btn" data-tab="tabTree">🌳 View Syllabus</button>
+                        <button class="tab-btn" data-tab="tabSearch">🔍 Search</button>
+                        <button class="tab-btn" data-tab="tabExport">📊 Confidence & Export</button>
+                    </div>
+
+                    <!-- TAB 1: CHATBOT -->
+                    <div id="tabChat" class="tab-content active">
+                        <div class="chat-messages" id="chatMessages">
+                            <!-- Dynamic messages -->
+                        </div>
+
+                        <!-- Suggestion Chips -->
+                        <div class="suggestion-chips">
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('Show the complete syllabus')">📋 Complete Syllabus</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('What courses are in this document?')">📚 List Courses</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('What are the course outcomes?')">🎯 Course Outcomes</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('Which unit has the most topics?')">🔍 Top Units</button>
+                        </div>
+
+                        <!-- Chat Input -->
+                        <div class="chat-input-bar">
+                            <input type="text" id="chatInput" class="chat-input" placeholder="Ask anything about your syllabus...">
+                            <button id="sendChatBtn" class="btn-primary">Send</button>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: VIEW FULL SYLLABUS -->
+                    <div id="tabTree" class="tab-content">
+                        <div id="treeContainer" class="tree-container">
+                            <!-- Hierarchical Tree Rendered Here -->
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: SEARCH -->
+                    <div id="tabSearch" class="tab-content">
+                        <div class="search-container">
+                            <div style="display:flex; gap:10px;">
+                                <input type="text" id="searchInput" class="chat-input" placeholder="Search keywords, topics, codes...">
+                                <button id="searchBtn" class="btn-primary">Search</button>
+                            </div>
+                            <div id="searchResultsList" class="search-results-list">
+                                <div style="color:var(--text-muted); font-size:0.9rem;">Enter a query above to search directly through all extracted syllabus sections.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: EXPORT & CONFIDENCE -->
+                    <div id="tabExport" class="tab-content">
+                        <div style="padding:20px; flex:1; overflow-y:auto;">
+                            <h3 style="font-family:'Outfit', sans-serif; margin-bottom:8px;">Estimated Extraction Confidence</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+                                Calculated dynamically from text clarity, OCR performance, document structure, course detection, and topic completeness.
+                            </p>
+                            
+                            <div id="confidenceGrid" class="confidence-grid">
+                                <!-- Cards rendered dynamically -->
+                            </div>
+
+                            <h3 style="font-family:'Outfit', sans-serif; margin-top:28px; margin-bottom:12px;">Export Document Data</h3>
+                            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                                <button class="btn-secondary" onclick="downloadJSON()">📥 Download Extracted JSON</button>
+                                <button class="btn-secondary" onclick="downloadText()">📄 Download Plain Text</button>
+                                <button class="btn-secondary" onclick="downloadReport()">📊 Download Extraction Report</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
