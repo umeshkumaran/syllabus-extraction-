@@ -58,6 +58,11 @@ function handleSelectedFile(file) {
         return;
     }
 
+    const maxVercelBytes = 4.5 * 1024 * 1024; // Vercel 4.5 MB limit
+    if (file.size > maxVercelBytes) {
+        alert(`File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds Vercel's 4.5 MB upload limit. Please select a syllabus PDF under 4.5 MB or compress your PDF.`);
+    }
+
     selectedFile = file;
     document.getElementById('selectedFileName').textContent = file.name;
     document.getElementById('selectedFileSize').textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
@@ -74,6 +79,12 @@ function removeSelectedFile() {
 async function processSyllabus() {
     if (!selectedFile) {
         alert('Please select a syllabus PDF first.');
+        return;
+    }
+
+    const maxVercelBytes = 4.5 * 1024 * 1024;
+    if (selectedFile.size > maxVercelBytes) {
+        alert(`Your file is ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB. Vercel serverless functions restrict uploads to 4.5 MB max. Please upload a smaller PDF or compress it.`);
         return;
     }
 
@@ -124,6 +135,13 @@ async function processSyllabus() {
         });
 
         clearInterval(interval);
+
+        if (response.status === 413) {
+            alert('HTTP 413 Payload Too Large: Upload exceeds Vercel 4.5 MB limit. Please compress your PDF and try again.');
+            processingCard.style.display = 'none';
+            return;
+        }
+
         const data = await response.json();
 
         if (!response.ok || !data.success) {
