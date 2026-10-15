@@ -2,7 +2,7 @@ import os
 import uuid
 import json
 import tempfile
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from flask import Flask, render_template, request, jsonify, send_file, Response
 from werkzeug.utils import secure_filename
 
@@ -10,6 +10,7 @@ from extractor.pdf_reader import PDFReader
 from extractor.structure_analyzer import StructureAnalyzer
 from extractor.confidence import ConfidenceCalculator
 from extractor.rag_engine import RAGEngine
+from extractor.report_generator import PDFReportGenerator
 
 app = Flask(__name__)
 
@@ -174,27 +175,124 @@ def get_page_image(doc_id, page_num):
     except Exception as e:
         return str(e), 500
 
+@app.route('/api/document/<doc_id>/page_topics/<int:page_num>')
+def get_page_topics(doc_id, page_num):
+    """
+    Returns topics, subtopics, and units identified on a specific PDF page.
+    Directly powers the PDF viewer's page-level topic reference panel.
+    """
+    if doc_id not in DOCUMENTS:
+        return jsonify({'error': 'Document not found'}), 404
+
+    doc = DOCUMENTS[doc_id]
+    h = doc['hierarchy']
+    courses = h.get('courses', [])
+
+    matched_topics = []
+    matched_units = []
+    matched_courses = []
+
+    for c in courses:
+        if page_num in c.get('pages', []):
+            matched_courses.append({
+                'code': c.get('code'),
+                'title': c.get('title'),
+                'start_page': c.get('start_page')
+            })
+
+        for u in c.get('units', []):
+            if u.get('page') == page_num:
+                matched_units.append({
+                    'course_code': c.get('code'),
+                    'unit_number': u.get('unit_number'),
+                    'title': u.get('title'),
+                    'hours': u.get('hours')
+                })
+
+            for t in u.get('topics', []):
+                t_page = t.get('page', u.get('page'))
+                sub_on_page = [st.get('title') for st in t.get('subtopics', []) if st.get('page') == page_num]
+                
+                if t_page == page_num or sub_on_page:
+                    matched_topics.append({
+                        'title': t.get('title'),
+                        'course_code': c.get('code'),
+                        'unit_title': f"Unit {u.get('unit_number')}: {u.get('title')}",
+                        'page': t_page,
+                        'subtopics': sub_on_page if sub_on_page else [st.get('title') for st in t.get('subtopics', [])]
+                    })
+
+    return jsonify({
+        'page': page_num,
+        'courses': matched_courses,
+        'units': matched_units,
+        'topics': matched_topics
+    })
+
 @app.route('/api/document/<doc_id>/json')
 def export_json(doc_id):
     if doc_id not in DOCUMENTS:
         return "Document not found", 404
 
     doc = DOCUMENTS[doc_id]
+    h = doc['hierarchy']
+    courses = h.get("courses", [])
+
+    all_units = []
+    all_cos = []
+    all_books = []
+    copo_matrix = {}
+
+    for c in courses:
+        for u in c.get("units", []):
+            all_units.append({
+                "course_code": c.get("code"),
+                "unit_number": u.get("unit_number"),
+                "title": u.get("title"),
+                "hours": u.get("hours"),
+                "page": u.get("page"),
+                "topics": u.get("topics", [])
+            })
+        for co in c.get("outcomes", []):
+            all_cos.append({
+                "course_code": c.get("code"),
+                "text": co.get("text"),
+                "bloom_level": co.get("bloom_level"),
+                "bloom_source": co.get("bloom_source"),
+                "page": co.get("page")
+            })
+        for b in c.get("textbooks", []):
+            all_books.append({"type": "textbook", "course": c.get("code"), "title": b.get("title"), "page": b.get("page")})
+        for b in c.get("reference_books", []):
+            all_books.append({"type": "reference", "course": c.get("code"), "title": b.get("title"), "page": b.get("page")})
+        if c.get("co_po_matrix") and not copo_matrix:
+            copo_matrix = c["co_po_matrix"][0]
+
+    not_extracted = []
+    if not h.get("institution"): not_extracted.append("institution_name")
+    if not h.get("programme"): not_extracted.append("programme")
+    if not h.get("department"): not_extracted.append("department")
+    if not h.get("batch_year"): not_extracted.append("regulation_or_batch_year")
+    if not all_cos: not_extracted.append("course_outcomes")
+    if not h.get("programme_outcomes"): not_extracted.append("programme_outcomes")
+    if not copo_matrix: not_extracted.append("co_po_matrix")
+    if not all_books: not_extracted.append("books")
+
     export_payload = {
         "document": doc['filename'],
+        "courses": courses,
+        "selected_course": courses[0] if courses else {},
+        "units": all_units,
+        "course_outcomes": all_cos,
+        "programme_outcomes": h.get("programme_outcomes", []),
+        "co_po_matrix": copo_matrix,
+        "books": all_books,
+        "not_extracted": not_extracted,
         "total_pages": doc['total_pages'],
-        "confidence": doc['confidence'],
-        "hierarchy": doc['hierarchy'],
-        "raw_pages": [
-            {
-                "page": p["page"],
-                "text": p["text"],
-                "used_ocr": p["used_ocr"],
-                "tables": p["tables"]
-            }
-            for p in doc['pages_data']
-        ]
+        "estimated_extraction_confidence": doc['confidence'],
+        "hierarchy": h
     }
+
     return Response(
         json.dumps(export_payload, indent=2),
         mimetype='application/json',
@@ -209,7 +307,7 @@ def export_text(doc_id):
     doc = DOCUMENTS[doc_id]
     text_content = f"EXTRACTED SYLLABUS: {doc['filename']}\n"
     text_content += f"Total Pages: {doc['total_pages']}\n"
-    text_content += f"Extraction Confidence: {doc['confidence']['overall']}%\n"
+    text_content += f"Estimated Extraction Confidence: {doc['confidence']['overall']}%\n"
     text_content += "=" * 60 + "\n\n"
 
     for p in doc['pages_data']:
@@ -228,36 +326,20 @@ def export_report(doc_id):
         return "Document not found", 404
 
     doc = DOCUMENTS[doc_id]
-    h = doc['hierarchy']
-    conf = doc['confidence']
+    try:
+        generator = PDFReportGenerator(doc)
+        pdf_bytes = generator.build()
+        clean_name = os.path.splitext(doc["filename"])[0]
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={'Content-Disposition': f'attachment;filename={clean_name}_report.pdf'}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f"Error generating PDF report: {str(e)}", 500
 
-    report = f"# EXTRACTION REPORT: {doc['filename']}\n\n"
-    report += f"- **Total Pages:** {doc['total_pages']}\n"
-    report += f"- **Courses Detected:** {h['total_courses']}\n"
-    report += f"- **Estimated Extraction Confidence:** {conf['overall']}%\n"
-    report += f"  - Text Quality: {conf['text_extraction']}%\n"
-    report += f"  - OCR Score: {conf['ocr']}%\n"
-    report += f"  - Course Detection: {conf['course_detection']}%\n"
-    report += f"  - Unit Detection: {conf['unit_detection']}%\n"
-    report += f"  - Topic Detection: {conf['topic_detection']}%\n\n"
-    report += "---\n\n"
-
-    report += "## Hierarchical Syllabus Structure\n\n"
-    for course in h.get("courses", []):
-        report += f"### Course: {course.get('code', '')} - {course.get('title', '')} (Page {course.get('start_page')})\n"
-        for unit in course.get("units", []):
-            report += f"#### Unit {unit.get('unit_number')}: {unit.get('title')} (Page {unit.get('page')})\n"
-            for t in unit.get("topics", []):
-                report += f"- {t.get('title')} (Page {t.get('page')})\n"
-                for st in t.get("subtopics", []):
-                    report += f"  - {st.get('title')} (Page {st.get('page')})\n"
-        report += "\n"
-
-    return Response(
-        report,
-        mimetype='text/markdown',
-        headers={'Content-Disposition': f'attachment;filename={doc["filename"]}_report.md'}
-    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

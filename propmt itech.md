@@ -879,3 +879,179 @@ The primary user experience must be:
 The chatbot must answer based on the uploaded syllabus and tell the user exactly which PDF page contains the information.
 
 Do not use fabricated sample syllabus content anywhere in the working application.
+**Add a New Feature to My Existing AI Syllabus PDF Chatbot: Smart Reference Book Topic Finder**
+
+Important: Extend my existing application by adding this feature. Do not replace, rewrite, remove, or break my existing syllabus extraction functionality. Preserve the current UI, backend, working features, database, and project structure wherever possible. First inspect the existing project and understand how it works, then integrate this feature into it.
+
+### 1. New feature objective
+
+Add a feature called **Smart Reference Book Topic Finder**.
+
+The application must allow users to upload a reference book or textbook PDF and search for any topic or subtopic within the document.
+
+The topic may be listed in the book's printed index or table of contents, but it may also be completely absent from both. Even if the topic is not listed in the index, the system must search the actual content of the entire PDF and find the relevant explanation wherever it appears.
+
+Example:
+
+A user uploads a Mathematics reference book and searches for **"Eigenvalue"**.
+
+If "Eigenvalue" is not mentioned in the printed index but its explanation appears in the body of the book, the system must locate the explanation, extract the relevant content, and identify the page on which the explanation starts and the page on which it ends.
+
+This is an example of expected behaviour, not a hardcoded topic. The application must work with arbitrary topics and reference books.
+
+### 2. Search the entire PDF, not just the index
+
+When a reference book is uploaded:
+
+- Process every page of the PDF.
+- Extract text from the main body, headings, subheadings, paragraphs, tables, equations where possible, captions, and footnotes.
+- Use OCR on scanned pages when normal text extraction is insufficient.
+- Treat the printed index and table of contents as additional sources of clues, not as the only search source.
+- Build a searchable, page-aware index of the entire document.
+- Never assume that a topic does not exist merely because it is missing from the printed index.
+
+### 3. Implement intelligent topic search
+
+Use a combination of:
+
+- Exact keyword search.
+- Partial-word and phrase matching where appropriate.
+- Synonym and related-term matching.
+- Semantic search to identify passages discussing the requested concept even when the exact phrase is absent.
+- Context-based ranking to identify the most relevant explanation.
+
+Search results must be grounded in text extracted from the uploaded PDF.
+
+For example, when searching for "Eigenvalue", the system may find an explanation under a related heading or within a paragraph that uses related mathematical terminology.
+
+Do not automatically treat every mention of a topic as its full explanation. Distinguish between a brief mention, a definition, a detailed explanation, an example, and a separate occurrence elsewhere in the book.
+
+### 4. Detect the complete explanation and its page range
+
+For each relevant result, attempt to identify:
+
+- Topic name as searched.
+- Actual heading or section title, if present.
+- Explanation start page.
+- Explanation end page.
+- Relevant extracted content.
+- Confidence in the topic match.
+- Confidence in the detected start and end boundaries.
+
+Use headings, subheadings, paragraph continuity, page transitions, equations, examples, and the next section heading to estimate where the explanation begins and ends.
+
+A topic may start in the middle of a page and continue across multiple pages. The system must support explanations spanning multiple pages.
+
+Do not assume that a topic ends on the same page where it first appears. Do not include the entire remainder of the book as the explanation.
+
+If the topic appears in multiple independent sections, return separate results for each occurrence rather than combining unrelated passages into one section.
+
+If the exact boundaries cannot be determined reliably, show an estimated page range and clearly label it as uncertain. Never invent exact page boundaries.
+
+### 5. Display the search results
+
+For each matching section, display:
+
+- Topic searched.
+- Section or heading found.
+- Short preview of the explanation.
+- Start page.
+- End page.
+- Match confidence.
+- A button or clickable page citation labelled **Open in PDF**.
+
+Example interface:
+
+Search: Eigenvalue
+
+Result 1:
+- Heading: [Actual heading extracted from the book]
+- Explanation: [Actual extracted text]
+- Starts at: PDF page XX
+- Ends at: PDF page XX
+- [Open in PDF]
+
+The placeholder values above describe the interface only. Never display them as actual extracted results.
+
+### 6. Clickable citations and PDF navigation
+
+Integrate the feature with the existing PDF viewer.
+
+When the user clicks a page citation or the "Open in PDF" control:
+
+- Open the uploaded PDF in the existing viewer.
+- Navigate to the correct physical PDF page.
+- If the explanation spans multiple pages, allow the user to navigate to each page in the detected range.
+- Highlight the relevant text on the page wherever reliable text coordinates are available.
+- Preserve the distinction between the physical PDF page number and the printed page number shown in the book.
+- If highlighting is unavailable for a scanned or poorly extracted page, still navigate to the correct page and display the relevant extracted passage separately.
+
+Store page numbers and text-position metadata with each indexed passage so citations remain connected to their original locations.
+
+### 7. Add a search interface without damaging the existing syllabus features
+
+Keep the existing syllabus extraction and chatbot workflow unchanged.
+
+Add an appropriate option to select the document task:
+
+- Syllabus Extraction and Chat
+- Reference Book Topic Finder
+
+For reference book mode, provide:
+
+- PDF upload.
+- Topic search box.
+- Search button.
+- Search results.
+- Extracted explanation.
+- Start and end page numbers.
+- Clickable citations.
+- PDF viewer navigation and text highlighting.
+
+Reuse the existing PDF-processing, OCR, indexing, retrieval, and PDF-viewer components wherever possible. Do not duplicate existing functionality unnecessarily.
+
+### 8. Technical implementation
+
+Adapt the implementation to the technologies already used by this project.
+
+For PDF processing, use the existing PDF extraction library or a suitable library such as PyMuPDF.
+
+For scanned documents, reuse the existing OCR system or add OCR only if necessary.
+
+Use full-text keyword search alongside semantic retrieval. Preserve page-level metadata and, when possible, text-block coordinates.
+
+Implement topic-boundary detection as a separate component so it can be improved and tested independently.
+
+Use the existing chatbot or retrieval pipeline to display source-grounded explanations. Do not train a new AI model unless there is a demonstrated need.
+
+### 9. Accuracy and reliability rules
+
+- Never hardcode Eigenvalue or any other specific topic.
+- Never hardcode a reference book, author, page number, or expected result.
+- Never rely exclusively on the printed index or table of contents.
+- Never fabricate extracted explanations, page ranges, or citations.
+- Distinguish an exact match from a related-concept match.
+- Return multiple relevant locations when appropriate.
+- If a topic is genuinely not found, clearly report that it was not found in the searchable PDF content.
+- If OCR or extraction quality is poor, disclose the limitation.
+- Preserve the original wording of the source when displaying extracted passages.
+- Do not claim that a topic is absent solely because exact keyword search returned no results.
+
+### 10. Testing and acceptance criteria
+
+Test the new feature using reference books that were not used during development.
+
+Verify that:
+
+1. A topic listed in the printed index can be found.
+2. A topic missing from the printed index but present in the main content can be found.
+3. A topic explained across multiple pages returns a reasonable start and end page.
+4. A topic mentioned in multiple sections returns separate relevant locations.
+5. Clicking a citation opens the correct PDF page.
+6. Text highlighting works where reliable text-position information is available.
+7. Scanned PDFs are processed using OCR when required.
+8. A topic absent from the document is reported honestly.
+9. The system does not return unrelated passages merely because they contain similar words.
+10. The existing syllabus extraction and chatbot features continue to work.
+
+First inspect the current codebase, then implement this feature within the existing project. Do not create a separate replacement application. After implementation, explain which files were changed, how the new feature works, and how I can test it using my own reference book PDF.

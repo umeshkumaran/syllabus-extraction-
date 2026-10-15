@@ -2,8 +2,11 @@ import re
 
 class StructureAnalyzer:
     """
-    Parses page data into a rich hierarchical structure (Institution, Programme, Branch, Semester, Course, Unit, Topics, Subtopics, Outcomes, Books, Matrices).
-    Guarantees page number attribution for every node.
+    Parses PDF page data into a rich hierarchical structure:
+    Institution → Programme → Department/Branch → Semester → Course → Unit → Topics → Subtopics
+    with Course Outcomes (Bloom's taxonomy), Books, and CO-PO Matrices.
+    Guarantees exact page number attribution for every node.
+    Works dynamically across diverse college syllabus formats without hardcoding.
     """
 
     def __init__(self, pages_data):
@@ -21,7 +24,6 @@ class StructureAnalyzer:
         programme_outcomes = self._extract_programme_outcomes()
         textbooks, reference_books = self._extract_books()
 
-        # Build hierarchical representation
         hierarchy = {
             "institution": institution,
             "programme": programme,
@@ -38,36 +40,28 @@ class StructureAnalyzer:
         return hierarchy
 
     def _extract_institution(self):
-        # Look in first 3 pages for common university / college header patterns
+        """
+        Dynamically finds University / Institute / College name from initial pages.
+        """
         patterns = [
-            r'([A-Z\s,.-]+(?:UNIVERSITY|COLLEGE|INSTITUTE|ACADEMY|POLYTECHNIC)[A-Z\s,.-]*)',
+            r'([A-Z\s,.-]+(?:UNIVERSITY|COLLEGE OF ENGINEERING|INSTITUTE OF TECHNOLOGY|POLYTECHNIC|ACADEMY)[A-Z\s,.-]*)',
             r'(AUTONOMOUS INSTITUTION[^\n]*)'
         ]
-        for p in self.pages_data[:3]:
+        for p in self.pages_data[:4]:
             text = p["text"]
             for line in text.split('\n'):
                 line_str = line.strip()
-                if any(k in line_str.upper() for k in ["UNIVERSITY", "INSTITUTE OF TECHNOLOGY", "COLLEGE OF ENGINEERING"]):
-                    if len(line_str) > 5 and len(line_str) < 120:
+                if any(k in line_str.upper() for k in ["UNIVERSITY", "INSTITUTE OF TECHNOLOGY", "COLLEGE OF ENGINEERING", "NATIONAL INSTITUTE", "INDIAN INSTITUTE"]):
+                    if 5 < len(line_str) < 140 and not line_str.upper().startswith("COURSE"):
                         return {"name": line_str, "page": p["page"]}
         return None
 
     def _extract_programme(self):
+        """
+        Detects Programme (B.E., B.Tech, M.Tech, MCA, etc.) from initial pages.
+        """
         patterns = [
-            r'(B\.E\.|B\.Tech|M\.E\.|M\.Tech|B\.Sc|M\.Sc|BCA|MCA|B\.A\.|M\.A\.|BACHELOR OF [^\n]+|MASTER OF [^\n]+)',
-        ]
-        for p in self.pages_data[:4]:
-            for pat in patterns:
-                m = re.search(pat, p["text"], re.IGNORECASE)
-                if m:
-                    return {"name": m.group(0).strip(), "page": p["page"]}
-        return None
-
-    def _extract_department(self):
-        patterns = [
-            r'(DEPARTMENT OF [^\n]+)',
-            r'(BRANCH / SUBJECT:\s*[^\n]+)',
-            r'(COMPUTER SCIENCE[^\n]*|MECHANICAL[^\n]*|ELECTRICAL[^\n]*|CIVIL[^\n]*|INFORMATION TECHNOLOGY[^\n]*)'
+            r'\b(B\.E\.|B\.Tech|M\.E\.|M\.Tech|B\.Sc|M\.Sc|BCA|MCA|B\.A\.|M\.A\.|B\.Com|M\.Com|BACHELOR OF [^\n]+|MASTER OF [^\n]+)\b',
         ]
         for p in self.pages_data[:5]:
             for pat in patterns:
@@ -76,13 +70,35 @@ class StructureAnalyzer:
                     return {"name": m.group(0).strip(), "page": p["page"]}
         return None
 
-    def _extract_batch_year(self):
-        pats = [
-            r'(REGULATION[S]?\s*:?\s*\d{4})',
-            r'(BATCH\s*:?\s*\d{4}-\d{4})',
-            r'(ACADEMIC YEAR\s*:?\s*\d{4}-\d{4})'
+    def _extract_department(self):
+        """
+        Detects Department / Branch.
+        """
+        patterns = [
+            r'(DEPARTMENT OF [^\n]+)',
+            r'(BRANCH / DISCIPLINE:\s*[^\n]+)',
+            r'(COMPUTER SCIENCE[^\n]*|INFORMATION TECHNOLOGY[^\n]*|MECHANICAL[^\n]*|ELECTRICAL[^\n]*|ELECTRONICS[^\n]*|CIVIL[^\n]*|ARTIFICIAL INTELLIGENCE[^\n]*)'
         ]
-        for p in self.pages_data[:3]:
+        for p in self.pages_data[:5]:
+            for pat in patterns:
+                m = re.search(pat, p["text"], re.IGNORECASE)
+                if m:
+                    val = m.group(0).strip()
+                    if len(val) < 100:
+                        return {"name": val, "page": p["page"]}
+        return None
+
+    def _extract_batch_year(self):
+        """
+        Detects Regulation, Batch, or Academic Year.
+        """
+        pats = [
+            r'(REGULATION[S]?\s*[:.-]?\s*\d{4})',
+            r'(BATCH\s*[:.-]?\s*\d{4}\s*-\s*\d{4})',
+            r'(ACADEMIC YEAR\s*[:.-]?\s*\d{4}\s*-\s*\d{4})',
+            r'(CURRICULUM\s*&\s*SYLLABUS\s*[:.-]?\s*\d{4})'
+        ]
+        for p in self.pages_data[:4]:
             for pat in pats:
                 m = re.search(pat, p["text"], re.IGNORECASE)
                 if m:
@@ -91,24 +107,39 @@ class StructureAnalyzer:
 
     def _extract_courses(self):
         """
-        Detects individual courses, course codes, course titles, credits, units, topics, subtopics, outcomes, books, and tables.
+        Detects all courses in the PDF with code, title, starting page, units, topics, subtopics,
+        outcomes (Bloom levels), books, and CO-PO matrices.
+        Supports varied college course code formats.
         """
         courses = []
         current_course = None
 
-        # Regex for course header detection e.g., "CS8591 COMPUTER NETWORKS L T P C" or "COURSE CODE: CS3451"
+        # Regex for course codes:
+        # 1. Letters then numbers: CS8591, MA3151, CS3451, CS-8591, CSE301
+        # 2. Numbers then letters: 18CS51, 21CS42, 22MA101
+        # 3. Explicit labels: COURSE CODE: CS3451, CODE: CS101, SUBJECT CODE: ...
         course_code_pat = re.compile(
-            r'(?:COURSE CODE|CODE|SUBJECT CODE)?\s*[:.-]?\s*([A-Z]{2,4}\s*\d{3,5}[A-Z]?)\s*[:.-]?\s*([^\n\d]+)', re.IGNORECASE
+            r'(?:COURSE CODE|CODE|SUBJECT CODE|PAPER CODE)?\s*[:.-]?\s*\b([A-Z]{2,5}[-\s]?\d{3,5}[A-Z]?|\d{2}[A-Z]{2,4}\s*\d{2,4}[A-Z]?)\b\s*[:.-]?\s*([^\n\d]+)?',
+            re.IGNORECASE
         )
+        
+        # Explicit course title lines: COURSE: Data Structures, SUBJECT: Computer Networks
+        explicit_title_pat = re.compile(
+            r'^(?:COURSE TITLE|COURSE NAME|SUBJECT|COURSE)\s*[:.-]\s*([^\n]+)', re.IGNORECASE
+        )
+
+        # Unit / Module / Chapter header pattern
         unit_header_pat = re.compile(
-            r'^(UNIT\s+([I|V|X\d]+)\s*[:.-]?\s*([^\n]+))', re.IGNORECASE
+            r'^(?:UNIT|MODULE|CHAPTER|PART)\s+([I|V|X\d]+)\s*[:.-]?\s*([^\n]*)', re.IGNORECASE
         )
+
         credit_pat = re.compile(
             r'\bL\s*[:.-]?\s*(\d+)\s+T\s*[:.-]?\s*(\d+)\s+P\s*[:.-]?\s*(\d+)\s+C\s*[:.-]?\s*(\d+(?:\.\d+)?)\b', re.IGNORECASE
         )
+        alt_credit_pat = re.compile(
+            r'\bCREDITS?\s*[:.-]?\s*(\d+(?:\.\d+)?)\b|\((\d+)\s*[-–]\s*(\d+)\s*[-–]\s*(\d+)\s*[-–]\s*(\d+)\)', re.IGNORECASE
+        )
         hours_pat = re.compile(r'(\d+)\s*(?:PERIODS|HOURS|HRS)', re.IGNORECASE)
-
-        bloom_levels = ["remember", "understand", "apply", "analyse", "analyze", "evaluate", "create"]
 
         for p in self.pages_data:
             page_num = p["page"]
@@ -120,11 +151,11 @@ class StructureAnalyzer:
                 if not line_s:
                     continue
 
-                # Check for unit header
+                # 1. Check for Unit/Module Header
                 unit_match = unit_header_pat.match(line_s)
                 if unit_match and current_course:
-                    unit_num = unit_match.group(2)
-                    unit_title = unit_match.group(3).strip()
+                    unit_num = unit_match.group(1)
+                    unit_title = unit_match.group(2).strip() or f"Unit {unit_num}"
                     
                     # Search for unit hours if present
                     u_hours = None
@@ -143,22 +174,40 @@ class StructureAnalyzer:
                     current_course["units"].append(current_unit)
                     continue
 
-                # Check for course header
+                # 2. Check for Course Header
                 c_match = course_code_pat.search(line_s)
-                if c_match:
-                    code = c_match.group(1).strip()
-                    title = c_match.group(2).strip()
+                is_explicit = explicit_title_pat.match(line_s)
+                
+                detected_code = None
+                detected_title = None
+
+                if is_explicit:
+                    detected_title = is_explicit.group(1).strip()
+                    detected_code = f"CRS-{len(courses)+1:02d}"
+                elif c_match:
+                    code_cand = c_match.group(1).strip()
+                    title_cand = (c_match.group(2) or "").strip()
                     
-                    # Avoid false positives like "UNIT 1" or dates
-                    if len(code) >= 4 and not code.startswith("UNIT"):
-                        # Save previous course if any
+                    # Prevent false matches on standard terms like "UNIT 1", "PAGE 12", "REG 2021"
+                    if len(code_cand) >= 4 and not any(code_cand.upper().startswith(k) for k in ["UNIT", "PAGE", "REG", "TABLE", "BATCH"]):
+                        detected_code = code_cand
+                        detected_title = title_cand
+
+                if detected_code:
+                    # Clean title if empty or too short
+                    if not detected_title or len(detected_title) < 3:
+                        # Try to look at line after or cleaned text
+                        detected_title = f"Course {detected_code}"
+
+                    # If this is a new course header
+                    if not current_course or current_course["code"].replace(" ", "").upper() != detected_code.replace(" ", "").upper():
                         if current_course:
                             self._finalize_course(current_course)
                             courses.append(current_course)
 
                         current_course = {
-                            "code": code,
-                            "title": title,
+                            "code": detected_code,
+                            "title": detected_title,
                             "start_page": page_num,
                             "pages": [page_num],
                             "credits_info": None,
@@ -173,7 +222,7 @@ class StructureAnalyzer:
                         }
                         continue
 
-                # If inside a course
+                # 3. If inside a course
                 if current_course:
                     if page_num not in current_course["pages"]:
                         current_course["pages"].append(page_num)
@@ -182,7 +231,7 @@ class StructureAnalyzer:
                         current_course["raw_text_by_page"][page_num] = []
                     current_course["raw_text_by_page"][page_num].append(line_s)
 
-                    # Look for L T P C credit pattern
+                    # Look for credits
                     if not current_course["credits_info"]:
                         cred_m = credit_pat.search(line_s)
                         if cred_m:
@@ -191,8 +240,25 @@ class StructureAnalyzer:
                                 "T": cred_m.group(2),
                                 "P": cred_m.group(3),
                                 "C": cred_m.group(4),
+                                "credits_total": float(cred_m.group(4)),
                                 "page": page_num
                             }
+                        else:
+                            alt_m = alt_credit_pat.search(line_s)
+                            if alt_m:
+                                if alt_m.group(1):
+                                    tot_c = float(alt_m.group(1))
+                                    current_course["credits_info"] = {
+                                        "L": "-", "T": "-", "P": "-", "C": str(tot_c),
+                                        "credits_total": tot_c,
+                                        "page": page_num
+                                    }
+                                elif alt_m.group(2):
+                                    current_course["credits_info"] = {
+                                        "L": alt_m.group(2), "T": alt_m.group(3), "P": alt_m.group(4), "C": alt_m.group(5),
+                                        "credits_total": float(alt_m.group(5)),
+                                        "page": page_num
+                                    }
 
                     # Add line to current unit if active
                     if current_course["units"]:
@@ -202,7 +268,7 @@ class StructureAnalyzer:
             self._finalize_course(current_course)
             courses.append(current_course)
 
-        # Fallback if no specific course code regex matched (e.g. simple syllabus without codes)
+        # Fallback if no specific course codes found
         if not courses and self.pages_data:
             fallback_course = {
                 "code": "SYLLABUS-01",
@@ -244,35 +310,50 @@ class StructureAnalyzer:
             "create": ["create", "design", "construct", "formulate", "develop", "k6"]
         }
 
-        # Finalize topics & subtopics inside units
+        # 1. Finalize topics & subtopics inside units
         for unit in course["units"]:
-            raw_lines = unit["raw_lines"]
+            raw_lines = unit.get("raw_lines", [])
             unit_topics = []
             current_topic = None
 
             for line_str, line_page in raw_lines:
-                # Filter out books/outcomes headers if they appear inside unit block
-                if any(k in line_str.upper() for k in ["TEXTBOOK", "REFERENCES", "COURSE OUTCOME", "OUTCOMES:"]):
+                # Stop if textbook / outcomes section begins inside unit block
+                if any(k in line_str.upper() for k in ["TEXTBOOK", "TEXT BOOK", "REFERENCES:", "COURSE OUTCOME", "OUTCOMES:"]):
                     break
                 
-                # Dynamic Topic / Subtopic extraction:
-                # If line starts with bullet, hyphen, semicolon split, or numbering like 1.1 or a)
-                subtopic_match = re.match(r'^(?:\d+\.\d+|\([a-z]\)|[a-z]\)|[-•])\s*(.+)', line_str)
+                # Check for explicit subtopic indicators:
+                # e.g., "1.1 Introduction", "a) Syntax", "• Relational Algebra", "- Subquery"
+                subtopic_match = re.match(r'^(?:\d+\.\d+|\([a-z\d]+\)|[a-z\d]\)|[-•–*])\s*(.+)', line_str)
                 if subtopic_match and current_topic:
                     current_topic["subtopics"].append({
                         "title": subtopic_match.group(1).strip(),
                         "page": line_page
                     })
                 elif len(line_str.split()) > 1:
-                    # Treat line or comma-separated fragments as topic / subtopics
-                    parts = [p.strip() for p in line_str.split(' - ') if p.strip()]
-                    if len(parts) > 1:
-                        top_title = parts[0]
-                        sub_titles = [{"title": s, "page": line_page} for s in parts[1:]]
+                    # Check if line contains topic with subtopics separated by colon or dash or semicolons
+                    # e.g., "Relational Model: Schemas, Tuples, Integrity Constraints"
+                    if ':' in line_str and not line_str.upper().startswith("UNIT") and not line_str.upper().startswith("HOURS"):
+                        t_parts = line_str.split(':', 1)
+                        top_name = t_parts[0].strip()
+                        subs_str = t_parts[1].strip()
+                        subs = [
+                            {"title": s.strip(), "page": line_page}
+                            for s in re.split(r'[,;-]', subs_str) if len(s.strip()) > 2
+                        ]
                         current_topic = {
-                            "title": top_title,
+                            "title": top_name,
                             "page": line_page,
-                            "subtopics": sub_titles
+                            "subtopics": subs
+                        }
+                        unit_topics.append(current_topic)
+                    elif ' - ' in line_str:
+                        parts = [p.strip() for p in line_str.split(' - ') if p.strip()]
+                        top_name = parts[0]
+                        subs = [{"title": s, "page": line_page} for s in parts[1:]]
+                        current_topic = {
+                            "title": top_name,
+                            "page": line_page,
+                            "subtopics": subs
                         }
                         unit_topics.append(current_topic)
                     else:
@@ -284,9 +365,10 @@ class StructureAnalyzer:
                         unit_topics.append(current_topic)
 
             unit["topics"] = unit_topics
-            del unit["raw_lines"]
+            if "raw_lines" in unit:
+                del unit["raw_lines"]
 
-        # Parse Course Outcomes, Textbooks, Reference Books, and Tables across course pages
+        # 2. Parse Course Outcomes, Textbooks, Reference Books, and Tables across course pages
         for page_num in course["pages"]:
             p_data = next((p for p in self.pages_data if p["page"] == page_num), None)
             if not p_data:
@@ -300,17 +382,16 @@ class StructureAnalyzer:
                 l_str = line.strip()
                 l_upper = l_str.upper()
 
-                if "COURSE OUTCOME" in l_upper or "OUTCOMES:" in l_upper or "CO1" in l_upper:
+                if "COURSE OUTCOME" in l_upper or "OUTCOMES:" in l_upper or "CO1" in l_upper or "STUDENTS WILL BE ABLE TO" in l_upper:
                     mode = "OUTCOMES"
-                elif "TEXT BOOK" in l_upper or "TEXTBOOK" in l_upper:
+                elif "TEXT BOOK" in l_upper or "TEXTBOOK" in l_upper or "PRESCRIBED BOOK" in l_upper:
                     mode = "TEXTBOOKS"
-                elif "REFERENCE" in l_upper and "BOOK" in l_upper:
+                elif ("REFERENCE BOOK" in l_upper or "REFERENCES:" in l_upper) and not "CO" in l_upper:
                     mode = "REFERENCES"
-                elif "UNIT " in l_upper:
+                elif "UNIT " in l_upper or "MODULE " in l_upper:
                     mode = None
 
-                if mode == "OUTCOMES" and ("CO" in l_upper or re.match(r'^CO\d+', l_str, re.I) or re.match(r'^\d+\.', l_str)):
-                    # Detect Bloom level
+                if mode == "OUTCOMES" and ("CO" in l_upper or re.match(r'^(?:CO\s*\d+|\d+\.)', l_str, re.I)):
                     bloom_level = None
                     bloom_src = "none"
                     
@@ -330,10 +411,10 @@ class StructureAnalyzer:
                         "bloom_source": bloom_src
                     })
 
-                elif mode == "TEXTBOOKS" and l_str and not "TEXT BOOK" in l_upper:
+                elif mode == "TEXTBOOKS" and l_str and not any(k in l_upper for k in ["TEXT BOOK", "TEXTBOOK", "PRESCRIBED"]):
                     course["textbooks"].append({"title": l_str, "page": page_num})
 
-                elif mode == "REFERENCES" and l_str and not "REFERENCE" in l_upper:
+                elif mode == "REFERENCES" and l_str and not any(k in l_upper for k in ["REFERENCE BOOK", "REFERENCES:"]):
                     course["reference_books"].append({"title": l_str, "page": page_num})
 
             # Check tables for CO-PO mapping
@@ -345,7 +426,7 @@ class StructureAnalyzer:
                     })
 
     def _extract_units_fallback(self, course):
-        unit_pat = re.compile(r'^(UNIT\s+[I|V|X\d]+[^\n]*)', re.I)
+        unit_pat = re.compile(r'^(?:UNIT|MODULE|CHAPTER)\s+([I|V|X\d]+)[^\n]*', re.I)
         for p in self.pages_data:
             page_num = p["page"]
             lines = p["text"].split('\n')
@@ -355,7 +436,7 @@ class StructureAnalyzer:
                 if m:
                     current_u = {
                         "unit_number": str(len(course["units"]) + 1),
-                        "title": m.group(1).strip(),
+                        "title": line.strip(),
                         "hours": None,
                         "page": page_num,
                         "topics": []
@@ -379,7 +460,7 @@ class StructureAnalyzer:
         for p in self.pages_data:
             lines = p["text"].split('\n')
             for line in lines:
-                if "CO" in line or "Course Outcome" in line:
+                if re.match(r'^(?:CO\s*\d+|\d+\.\s*Explain|\d+\.\s*Design|\d+\.\s*Analyze)', line.strip(), re.I):
                     outcomes.append({"text": line.strip(), "page": p["page"]})
         return outcomes
 
@@ -388,7 +469,7 @@ class StructureAnalyzer:
         for p in self.pages_data:
             lines = p["text"].split('\n')
             for line in lines:
-                if re.match(r'^PO\d+', line.strip(), re.I) or "PROGRAMME OUTCOME" in line.upper():
+                if re.match(r'^PO\s*\d+', line.strip(), re.I) or "PROGRAMME OUTCOME" in line.upper():
                     pos.append({"text": line.strip(), "page": p["page"]})
         return pos
 
@@ -409,13 +490,13 @@ class StructureAnalyzer:
                     is_rb = True
                     is_tb = False
                     continue
-                elif "UNIT" in l_u:
+                elif "UNIT" in l_u or "MODULE" in l_u:
                     is_tb = False
                     is_rb = False
 
-                if is_tb and line.strip():
+                if is_tb and line.strip() and not "TEXTBOOK" in line.upper():
                     textbooks.append({"title": line.strip(), "page": p["page"]})
-                elif is_rb and line.strip():
+                elif is_rb and line.strip() and not "REFERENCE" in line.upper():
                     refbooks.append({"title": line.strip(), "page": p["page"]})
 
         return textbooks, refbooks

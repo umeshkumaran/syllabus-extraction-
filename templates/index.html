@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Syllabus PDF Chatbot - Page-Aware Syllabus Intelligence</title>
+    <title>AI Syllabus PDF Chatbot - Page-Grounded Syllabus Intelligence</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,11 +14,14 @@
     <header class="app-header">
         <div class="logo-container">
             <div class="logo-icon">🎓</div>
-            <div class="logo-text">AI SYLLABUS PDF CHATBOT</div>
+            <div>
+                <div class="logo-text">AI SYLLABUS PDF CHATBOT</div>
+                <div class="logo-subtext">Upload any college syllabus • Page-grounded Q&A</div>
+            </div>
         </div>
         <div class="header-badges">
-            <div class="badge badge-cyan">⚡ Grounded PDF Intelligence</div>
-            <div class="badge badge-emerald">📄 Page-Aware Citations</div>
+            <div class="badge badge-cyan">⚡ 100% Grounded in PDF</div>
+            <div class="badge badge-emerald">📄 Clickable Page Citations</div>
         </div>
     </header>
 
@@ -26,9 +29,9 @@
 
         <!-- SCREEN 1: UPLOAD SCREEN -->
         <section id="uploadScreen" class="upload-screen">
-            <h1 class="hero-title">Chat with ANY Syllabus PDF</h1>
+            <h1 class="hero-title">Chat with ANY College Syllabus PDF</h1>
             <p class="hero-subtitle">
-                Upload any college or university syllabus PDF. We automatically extract courses, units, topics, subtopics, outcomes, and books with exact PDF page citations.
+                Upload any university syllabus. We automatically extract courses, units, topics, subtopics, outcomes with Bloom's taxonomy, books, and CO-PO matrices with exact PDF page citations.
             </p>
 
             <div class="drop-zone-card" id="dropZone">
@@ -51,7 +54,7 @@
                     </div>
                 </div>
                 <div style="display:flex; gap:10px;">
-                    <button class="btn-secondary" onclick="removeSelectedFile()">Remove</button>
+                    <button class="btn-secondary" onclick="removeSelectedFile()">Remove PDF</button>
                     <button class="btn-primary" onclick="processSyllabus()">Process Syllabus</button>
                 </div>
             </div>
@@ -60,7 +63,7 @@
             <div id="processingCard" class="processing-card">
                 <div class="progress-header">
                     <span>Processing Syllabus PDF...</span>
-                    <span id="progressPercentText" style="color:var(--accent-cyan)">0%</span>
+                    <span id="progressPercentText" style="color:var(--accent-cyan); font-weight:700;">0%</span>
                 </div>
                 <div class="progress-bar-bg">
                     <div id="progressBarFill" class="progress-bar-fill"></div>
@@ -74,19 +77,19 @@
         <!-- SCREEN 2: WORKSPACE SCREEN -->
         <section id="workspaceScreen" class="workspace-screen" style="display:none;">
             
-            <!-- Syllabus Loaded Bar -->
+            <!-- Syllabus Loaded Overview & Action Toolbar (Prompt Section 30) -->
             <div class="syllabus-loaded-card">
                 <div class="meta-stats">
                     <div class="stat-item">
                         <span class="stat-label">File</span>
-                        <span id="statFilename" class="stat-value">doc.pdf</span>
+                        <span id="statFilename" class="stat-value text-truncate" style="max-width:220px;">doc.pdf</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Pages</span>
                         <span id="statPages" class="stat-value">0</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Courses Detected</span>
+                        <span class="stat-label">Courses</span>
                         <span id="statCourses" class="stat-value">0</span>
                     </div>
                     <div class="stat-item">
@@ -95,29 +98,63 @@
                     </div>
                 </div>
 
+                <!-- Section 30 Required Action Buttons -->
                 <div class="action-bar">
-                    <button class="btn-secondary" onclick="downloadJSON()">📥 Download JSON</button>
-                    <button class="btn-secondary" onclick="downloadReport()">📄 Download Report</button>
-                    <button class="btn-primary" onclick="resetUpload()">📤 Upload New PDF</button>
+                    <button class="btn-secondary" id="btnViewFullSyllabus" onclick="switchTab('tabTree')">🌳 View Full Syllabus</button>
+                    <button class="btn-secondary" id="btnCoursesModal" onclick="openCoursesModal()">📚 Courses</button>
+                    <button class="btn-secondary" id="btnSearchTab" onclick="switchTab('tabSearch')">🔍 Search</button>
+                    <button class="btn-secondary" id="btnDownloadJson" onclick="downloadJSON()">📥 Download JSON</button>
+                    <button class="btn-secondary" id="btnDownloadReport" onclick="downloadReport()">📄 Download PDF Report</button>
+                    <button class="btn-primary" id="btnUploadNew" onclick="resetUpload()">📤 Upload New PDF</button>
                 </div>
             </div>
 
             <!-- Dual Pane Workspace -->
             <div class="dual-pane">
                 
-                <!-- LEFT PANE: PDF VIEWER -->
+                <!-- LEFT PANE: PDF VIEWER WITH TOPIC REFERENCE PANEL -->
                 <div class="pdf-pane">
                     <div class="pane-header">
-                        <div class="pane-title">📄 PDF Source Viewer</div>
+                        <div class="pane-title">
+                            <span>📄 PDF Source Viewer</span>
+                            <span id="pdfZoomLabel" style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">100%</span>
+                        </div>
                         <div class="pdf-controls">
+                            <!-- Zoom Controls -->
+                            <button class="btn-icon" onclick="zoomOut()" title="Zoom Out">−</button>
+                            <button class="btn-icon" onclick="resetZoom()" title="Reset Zoom">Fit</button>
+                            <button class="btn-icon" onclick="zoomIn()" title="Zoom In">+</button>
+                            <span class="control-divider"></span>
+                            <!-- Page Controls -->
                             <button class="btn-icon" onclick="prevPage()" title="Previous Page">◄</button>
                             <input type="number" id="pageInput" class="page-input" value="1" min="1" onchange="jumpToPage(this.value)">
                             <span style="font-size:0.85rem; color:var(--text-muted);">/ <span id="pageTotalDisplay">1</span></span>
                             <button class="btn-icon" onclick="nextPage()" title="Next Page">►</button>
+                            <span class="control-divider"></span>
+                            <button class="btn-toggle-topics active" id="btnTogglePageTopics" onclick="togglePageTopicsPanel()" title="Toggle Topics on Page Panel">
+                                📑 Page Topics
+                            </button>
                         </div>
                     </div>
+
+                    <!-- Collapsible Topics on This Page Panel (Prompt Line 9: "display the topic in pdf for user reference with subtopics") -->
+                    <div id="pageTopicsPanel" class="page-topics-panel">
+                        <div class="page-topics-header">
+                            <div style="font-weight:600; font-size:0.85rem; color:var(--accent-cyan); display:flex; align-items:center; gap:6px;">
+                                <span>📑 Topics & Subtopics on Page <span id="pageTopicsNum">1</span>:</span>
+                            </div>
+                            <span id="pageTopicsCount" class="badge-mini">0 Topics</span>
+                        </div>
+                        <div id="pageTopicsContent" class="page-topics-content">
+                            <!-- Dynamic topic & subtopic list for active page -->
+                        </div>
+                    </div>
+
+                    <!-- PDF Page Container -->
                     <div class="pdf-viewer-container" id="pdfViewerContainer">
-                        <img id="pdfPageImage" class="pdf-page-image" src="" alt="PDF Page Preview">
+                        <div id="pdfZoomWrapper" class="pdf-zoom-wrapper">
+                            <img id="pdfPageImage" class="pdf-page-image" src="" alt="PDF Page Preview">
+                        </div>
                     </div>
                 </div>
 
@@ -125,7 +162,7 @@
                 <div class="right-pane">
                     <div class="tab-nav">
                         <button class="tab-btn active" data-tab="tabChat">💬 Chatbot</button>
-                        <button class="tab-btn" data-tab="tabTree">🌳 View Syllabus</button>
+                        <button class="tab-btn" data-tab="tabTree">🌳 View Extracted Syllabus</button>
                         <button class="tab-btn" data-tab="tabSearch">🔍 Search</button>
                         <button class="tab-btn" data-tab="tabExport">📊 Confidence & Export</button>
                     </div>
@@ -133,26 +170,38 @@
                     <!-- TAB 1: CHATBOT -->
                     <div id="tabChat" class="tab-content active">
                         <div class="chat-messages" id="chatMessages">
-                            <!-- Dynamic messages -->
+                            <!-- Dynamic chat bubbles -->
                         </div>
 
-                        <!-- Suggestion Chips -->
+                        <!-- Dynamic Suggestion Chips -->
                         <div class="suggestion-chips">
                             <button class="chip-btn" onclick="sendSuggestedPrompt('Show the complete syllabus')">📋 Complete Syllabus</button>
-                            <button class="chip-btn" onclick="sendSuggestedPrompt('What courses are in this document?')">📚 List Courses</button>
-                            <button class="chip-btn" onclick="sendSuggestedPrompt('What are the course outcomes?')">🎯 Course Outcomes</button>
-                            <button class="chip-btn" onclick="sendSuggestedPrompt('Which unit has the most topics?')">🔍 Top Units</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('What courses are available in this document?')">📚 List Courses</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('Which course has the highest number of credits?')">⭐ Highest Credits</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('Show course outcomes with Bloom\'s taxonomy')">🎯 Course Outcomes</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('What are the text books and reference books?')">📖 Books & References</button>
+                            <button class="chip-btn" onclick="sendSuggestedPrompt('Show the CO-PO mapping matrix')">📊 CO-PO Matrix</button>
                         </div>
 
                         <!-- Chat Input -->
                         <div class="chat-input-bar">
-                            <input type="text" id="chatInput" class="chat-input" placeholder="Ask anything about your syllabus...">
+                            <input type="text" id="chatInput" class="chat-input" placeholder="Ask anything about your syllabus (e.g. units, topics, credits, outcomes, books)...">
                             <button id="sendChatBtn" class="btn-primary">Send</button>
                         </div>
                     </div>
 
-                    <!-- TAB 2: VIEW FULL SYLLABUS -->
+                    <!-- TAB 2: VIEW EXTRACTED SYLLABUS -->
                     <div id="tabTree" class="tab-content">
+                        <div class="tree-header-bar">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <label style="font-size:0.85rem; color:var(--text-muted);">Filter Course:</label>
+                                <select id="courseTreeFilter" class="select-filter" onchange="filterSyllabusTree(this.value)">
+                                    <option value="all">All Detected Courses</option>
+                                </select>
+                            </div>
+                            <button class="btn-secondary btn-sm" onclick="expandAllTreeNodes()">Expand All</button>
+                            <button class="btn-secondary btn-sm" onclick="collapseAllTreeNodes()">Collapse All</button>
+                        </div>
                         <div id="treeContainer" class="tree-container">
                             <!-- Hierarchical Tree Rendered Here -->
                         </div>
@@ -162,11 +211,11 @@
                     <div id="tabSearch" class="tab-content">
                         <div class="search-container">
                             <div style="display:flex; gap:10px;">
-                                <input type="text" id="searchInput" class="chat-input" placeholder="Search keywords, topics, codes...">
+                                <input type="text" id="searchInput" class="chat-input" placeholder="Search keywords, topics, codes, outcomes...">
                                 <button id="searchBtn" class="btn-primary">Search</button>
                             </div>
                             <div id="searchResultsList" class="search-results-list">
-                                <div style="color:var(--text-muted); font-size:0.9rem;">Enter a query above to search directly through all extracted syllabus sections.</div>
+                                <div style="color:var(--text-muted); font-size:0.9rem; padding:10px;">Enter a keyword above to search directly through all extracted syllabus sections with page citations.</div>
                             </div>
                         </div>
                     </div>
@@ -176,7 +225,7 @@
                         <div style="padding:20px; flex:1; overflow-y:auto;">
                             <h3 style="font-family:'Outfit', sans-serif; margin-bottom:8px;">Estimated Extraction Confidence</h3>
                             <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
-                                Calculated dynamically from text clarity, OCR performance, document structure, course detection, and topic completeness.
+                                Calculated dynamically from actual signals: text clarity, OCR performance, document structure, course detection, unit & topic completeness, and table detection. (Estimated confidence, not guaranteed accuracy).
                             </p>
                             
                             <div id="confidenceGrid" class="confidence-grid">
@@ -187,7 +236,7 @@
                             <div style="display:flex; gap:12px; flex-wrap:wrap;">
                                 <button class="btn-secondary" onclick="downloadJSON()">📥 Download Extracted JSON</button>
                                 <button class="btn-secondary" onclick="downloadText()">📄 Download Plain Text</button>
-                                <button class="btn-secondary" onclick="downloadReport()">📊 Download Extraction Report</button>
+                                <button class="btn-secondary" onclick="downloadReport()">📊 Download PDF Report</button>
                             </div>
                         </div>
                     </div>
@@ -198,6 +247,64 @@
 
         </section>
 
+    </div>
+
+    <!-- MODAL 1: SYLLABUS LOADED OVERVIEW MODAL (Prompt Section 1 & 30) -->
+    <div id="syllabusLoadedModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2 style="font-family:'Outfit', sans-serif; font-size:1.3rem; display:flex; align-items:center; gap:8px;">
+                    <span>🎉</span> SYLLABUS LOADED
+                </h2>
+                <button class="btn-icon" onclick="closeLoadedModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="loaded-stat-grid">
+                    <div class="loaded-stat-box">
+                        <span class="stat-sub">File</span>
+                        <span id="modalFileName" class="stat-main text-truncate">document.pdf</span>
+                    </div>
+                    <div class="loaded-stat-box">
+                        <span class="stat-sub">Total Pages</span>
+                        <span id="modalPages" class="stat-main">0</span>
+                    </div>
+                    <div class="loaded-stat-box">
+                        <span class="stat-sub">Courses Detected</span>
+                        <span id="modalCourses" class="stat-main">0</span>
+                    </div>
+                    <div class="loaded-stat-box">
+                        <span class="stat-sub">Estimated Confidence</span>
+                        <span id="modalConfidence" class="stat-main" style="color:var(--accent-cyan);">0%</span>
+                    </div>
+                </div>
+
+                <div id="modalMetaDetails" class="modal-meta-box">
+                    <!-- Institution, Programme, Department badges -->
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="openSyllabusViewFromModal()">🌳 View Syllabus</button>
+                    <button class="btn-primary" onclick="openChatFromModal()">💬 Start Chat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: COURSES QUICK SELECTOR MODAL -->
+    <div id="coursesModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card modal-lg">
+            <div class="modal-header">
+                <h2 style="font-family:'Outfit', sans-serif; font-size:1.3rem; display:flex; align-items:center; gap:8px;">
+                    <span>📚</span> Detected Courses Directory
+                </h2>
+                <button class="btn-icon" onclick="closeCoursesModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="coursesModalList" class="courses-modal-list">
+                    <!-- Rendered dynamically -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>
